@@ -1,8 +1,8 @@
 export const PET_SIZE = 128;
-export const MAX_PETS = 12;
+export const MAX_PETS = 24;
 export const PET_IDS = Object.freeze(['shisa', 'hachi', 'rakko', 'momonga', 'usagi']);
 export function clampPet(p, a) {
-  return { ...p, x: Math.max(a.x, Math.min(p.x, a.x + Math.max(0, a.width - PET_SIZE))), y: Math.max(a.y, Math.min(p.y, a.y + Math.max(0, a.height - PET_SIZE))) };
+  return { ...p, x: Math.max(a.x, Math.min(p.x, a.x + Math.max(0, a.width - (p.size ?? PET_SIZE)))), y: Math.max(a.y, Math.min(p.y, a.y + Math.max(0, a.height - (p.size ?? PET_SIZE)))) };
 }
 export function newPet(character, a, random = Math.random) {
   if (!PET_IDS.includes(character)) throw new Error('Unknown pet');

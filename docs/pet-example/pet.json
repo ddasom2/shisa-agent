@@ -1,0 +1,11 @@
+{
+  "id": "chiikawa",
+  "name": "치이카와",
+  "profile": {
+    "weights": { "idle": 6, "walk": 2, "run": 0.2, "sleep": 3, "play": 1 },
+    "duration": [5, 10],
+    "social": 0.15,
+    "follow": 0.1
+  },
+  "animations": { "idle": "idle.png" }
+}

@@ -1,5 +1,4 @@
-<!doctype html>
-<html lang="ko"><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' cy-asset:; connect-src 'none'">
+<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' cy-asset: pet-asset:; media-src cy-asset: pet-asset:; connect-src 'none'">
 <title>데스크톱 펫</title><link rel="stylesheet" href="pet.css"></head>
-<body><img id="pet" draggable="false" alt="데스크톱 펫"><script type="module" src="pet.js"></script></body></html>
+<body><div id="sprite"><img id="pet" draggable="false" alt="데스크톱 펫"><video id="video" muted loop playsinline hidden></video><span id="placeholder" hidden></span></div><span id="gesture" aria-hidden="true"></span><script type="module" src="pet.js"></script></body></html>

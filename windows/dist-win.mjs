@@ -29,6 +29,7 @@ const args = process.argv.slice(2);
 const argOf = (k) => args.find((a) => a.startsWith(`--${k}=`))?.split('=')[1];
 const ARCH = argOf('arch') ?? process.arch;
 if (!['arm64', 'x64'].includes(ARCH)) throw new Error(`--arch 는 x64 또는 arm64: ${ARCH}`);
+const PET_DEFAULT = args.includes('--pet-default');
 const MAKE_INSTALLER = !args.includes('--no-installer');
 if (process.platform !== 'win32') throw new Error('윈도우에서 실행해 주세요(Squirrel.Windows 도구가 윈도우 실행 파일이에요). 맥 dmg 는 desktop 에서 npm run dist');
 
@@ -172,6 +173,14 @@ for (const need of [`${EXE_NAME}.exe`, 'resources/app.asar', 'resources/agent/sr
   `resources/agent/node_modules/@anthropic-ai/${SDK_BIN}`]) {
   if (!fs.existsSync(path.join(APP, need))) throw new Error(`앱 폴더에 ${need} 가 없어요 (${APP})`);
 }
+// Portable pet edition includes all original assistant code, but starts offline on first launch.
+if (PET_DEFAULT) {
+  fs.writeFileSync(path.join(APP, 'resources', 'desktop-pet-default.json'), JSON.stringify({ mode: 'offline' }));
+  fs.writeFileSync(path.join(APP, 'Desktop Pets.cmd'), '@echo off\r\nstart "" "%~dp0Shisa.exe" --offline-pets\r\n');
+}
+for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) fs.copyFileSync(path.join(REPO, name), path.join(APP, `SHISA-${name}`));
+fs.copyFileSync(path.join(REPO, 'docs', 'desktop-pets.md'), path.join(APP, 'DESKTOP-PETS.md'));
+fs.cpSync(path.join(REPO, 'docs', 'pet-example'), path.join(APP, 'pet-example'), { recursive: true });
 fs.copyFileSync(ICO, path.join(DIST, `${EXE_NAME}.ico`)); // 릴리스에 같이 올린다(제어판 「앱」 목록 아이콘, release.md)
 
 // 5) 휴대용 zip: Squirrel 이 앱 폴더에 Squirrel.exe 를 넣기 전에 만든다. 윈도우 10+ 기본 tar.exe(bsdtar)는 -a 로 zip 을 만든다

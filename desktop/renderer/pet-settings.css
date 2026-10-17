@@ -1,0 +1,7 @@
+#catalog { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 14px; }
+.choice { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+.choice input[type=number] { width: 64px; margin: 0 0 0 auto; }
+#globals { display: flex; gap: 16px; flex-wrap: wrap; }
+.friend { border: 1px solid #8886; border-radius: 12px; padding: 16px; margin: 12px 0; }
+.friend h2 { margin: 0; } .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.friend:focus { outline: 2px solid #bb9866; } h2 small { font-size: 12px; opacity: .7; }

@@ -18,7 +18,8 @@
     "dist": "node scripts/dist.mjs",
     "dist:x64": "node scripts/dist.mjs --arch=x64",
     "dist:win": "node ../windows/dist-win.mjs",
-    "demo": "node scripts/demo.mjs"
+    "demo": "node scripts/demo.mjs",
+    "test:pets:smoke": "node scripts/pet-smoke.mjs"
   },
   "devDependencies": {
     "@electron/packager": "20.2.1",

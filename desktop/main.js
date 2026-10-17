@@ -1,6 +1,6 @@
 // 데스크톱 마스코트 — 메인 프로세스.
 // 데몬 SSE 를 여기서 받고 IPC 로 렌더러에 넘긴다. 렌더러는 네트워크 접근 없음.
-import { app, BrowserWindow, Menu, Tray, clipboard, dialog, globalShortcut, ipcMain, nativeImage, net, protocol, screen, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, Tray, clipboard, dialog, globalShortcut, ipcMain, nativeImage, net, protocol, safeStorage, screen, session, shell } from 'electron';
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -45,6 +45,11 @@ import { createDaemonHost } from './src/daemon-host.js';
 import { RELEASES_API, checkDue, newestRelease, shouldNotify, updateBubble } from './src/update-check.js';
 import { denied } from './src/denied.js';
 import { withCalendarAdded, withCalendarRemoved, calendarRows, calendarUrlById, calendarUrls, hubDoneFor, calendarReloadNote, okCalendarId, CALENDAR_DUP } from './src/calendars.js';
+import { readNetworkConfig, setupNetworkWindow } from './src/network-window.js';
+import { createPetCatalog } from './src/pet-catalog.js';
+import { setupPetSettings } from './src/pet-settings-window.js';
+import { restrictSession, restrictFetch } from './src/pet-security.js';
+import { createPetManager } from './src/pet-windows.js';
 import { squirrelPlan, loginItemTarget, appUserModelId } from './src/squirrel.js';
 
 // 윈도우 Squirrel 설치기가 --squirrel-* 로 띄운 실행이면 바로 가기만 고치고 끝낸다(맨 아래 시작 부분에서 갈린다)
@@ -72,7 +77,7 @@ attachConsole(logRing, console, process);
 // 기본 포트가 아니면 따로 노는 인스턴스(가짜 데몬 등) — 저장소·단일 인스턴스 잠금을 분리.
 // 앱 이름은 "cy"(메뉴·정보 창). userData 는 이름이 바뀌어도 원래 자리(cy-agent-desktop[-포트])에 고정.
 // 앱 번들 이름(시사)·productName 이 바뀌어도 같은 자리를 쓰게 package.json name 으로 고정
-const userData = path.join(app.getPath('appData'), 'cy-agent-desktop');
+const userData = process.env.CY_DESKTOP_DATA || path.join(app.getPath('appData'), 'cy-agent-desktop');
 // 고른 캐릭터(데몬 config.json character)에 따라 「하치와레 비서」처럼. 켤 땐 파일에서, 그 뒤엔 데몬 state 로 바꾼다(onCharacter)
 function configCharacter() {
   try { return JSON.parse(fs.readFileSync(path.join(process.env.CY_AGENT_HOME ?? path.join(os.homedir(), '.cy-agent'), 'config.json'), 'utf8'))?.character; } catch { return null; }
@@ -83,6 +88,13 @@ const who = () => characterName(charId);
 const appTitle = () => appName(charId);
 app.setName(appTitle());
 app.setPath('userData', PORT !== 47823 ? `${userData}-${PORT}` : userData);
+
+const networkFile = path.join(app.getPath('userData'), 'network-mode.json');
+const networkConfig = process.argv.includes('--offline-pets') ? { mode: 'offline', endpoint: '', model: '' } : readNetworkConfig(networkFile, fs.readFileSync, app.isPackaged && fs.existsSync(path.join(process.resourcesPath, 'desktop-pet-default.json')) ? 'offline' : 'normal');
+let networkUi = null;
+let petSettingsUi = null;
+let petCatalog = null;
+if (networkConfig.mode !== 'normal') for (const flag of ['disable-background-networking', 'disable-component-update', 'disable-domain-reliability', 'no-pings', 'disable-sync']) app.commandLine.appendSwitch(flag);
 
 const AI_IDS = new Set(KEY_PROVIDERS);
 const HUB_IDS = new Set(['claude', 'codex', 'gcal', 'outlook', 'jira', 'slack']);
@@ -894,13 +906,22 @@ async function triggerBriefing() {
 }
 
 // ---- 트레이/메뉴 ----
+let petManager = null;
 function menuTemplate() {
+  if (networkConfig.mode !== 'normal') return [
+    { label: networkConfig.mode === 'offline' ? '오프라인 펫 모드' : '사내망 AI 모드', enabled: false },
+    ...(petManager ? [petManager.menu()] : []),
+    { label: '네트워크 모드 · 사내망 AI…', click: () => networkUi?.show() },
+    { label: '종료', click: () => app.quit() },
+  ];
   return [
+    { label: '네트워크 모드 · 사내망 AI…', click: () => networkUi?.show() },
     { label: '패널 열기', click: () => showPanel(null) },
     ...(coder() ? [{ label: '작업 세션 열기', click: openSessionMenu }] : []),
     { label: '지금 브리핑', click: triggerBriefing },
     { label: '설정…', click: () => settingsUi?.show() },
     { label: '사용법 다시 보기', click: startTour },
+    ...(petManager ? [petManager.menu()] : []),
     { type: 'separator' },
     {
       label: state.bubblesHidden ? '말풍선 보이기' : '말풍선 숨기기',
@@ -941,7 +962,7 @@ function createTray() {
   tray.setToolTip(appTitle());
   rebuildTrayMenu();
   // 윈도우: 왼쪽 클릭은 패널(관례), 오른쪽 클릭은 메뉴(setContextMenu 가 알아서)
-  if (process.platform === 'win32') tray.on('click', () => showPanel(null));
+  if (process.platform === 'win32') tray.on('click', () => networkConfig.mode === 'normal' ? showPanel(null) : petSettingsUi?.show());
 }
 
 // ---- 앱(Dock·Cmd+Tab·메뉴 막대) ----
@@ -1238,6 +1259,7 @@ function setupIPC() {
       ...(coder() ? [{ label: '작업 세션 열기', click: openSessionMenu }] : []),
       { label: '지금 브리핑', click: triggerBriefing },
       { label: '사용법 다시 보기', click: startTour },
+    ...(petManager ? [petManager.menu()] : []),
       { type: 'separator' },
       { label: `${who()} 끄기`, click: () => app.quit() },
     ]).popup({ window: win });
@@ -1772,6 +1794,7 @@ function setupIPC() {
 // stream: <video>(공부 중·춤 webm)가 Range 로 끊어 읽고 되감게
 protocol.registerSchemesAsPrivileged([
   { scheme: ASSET_SCHEME, privileges: { standard: true, secure: true, stream: true } },
+  { scheme: 'pet-asset', privileges: { standard: true, secure: true, stream: true } },
   { scheme: ATTACH_SCHEME, privileges: { standard: true, secure: true } }, // 채팅 첨부 미리보기(아래)
 ]);
 
@@ -1786,6 +1809,32 @@ function registerAttachProtocol() {
       return new Response(res.body, { status: 200, headers: { 'content-type': res.headers.get('content-type') ?? 'application/octet-stream', 'x-content-type-options': 'nosniff', 'cache-control': 'private, max-age=86400' } });
     } catch { return new Response('unavailable', { status: 503 }); }
   });
+}
+
+function registerPetProtocol() {
+  protocol.handle('pet-asset', async (req) => {
+    const file = req.method === 'GET' ? petCatalog.resolve(req.url) : null;
+    if (!file) return new Response('not found', { status: 404 });
+    try {
+      const response = await net.fetch(pathToFileURL(file).href);
+      const type = ({ '.webm': 'video/webm', '.mp4': 'video/mp4', '.gif': 'image/gif', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' })[path.extname(file).toLowerCase()] ?? 'image/png';
+      return new Response(response.body, { headers: { 'content-type': type, 'cache-control': 'private, max-age=3600', 'x-content-type-options': 'nosniff' } });
+    } catch { return new Response('not found', { status: 404 }); }
+  });
+}
+
+function startPets(saved) {
+  petManager = createPetManager({ BrowserWindow, Menu, screen, ipcMain, appDir: __dirname, catalog: petCatalog, saved,
+    persist: (pets) => {
+      state.pets = pets;
+      clearTimeout(saveTimer);
+      fs.mkdirSync(path.dirname(statePath()), { recursive: true });
+      fs.writeFileSync(`${statePath()}.pets.tmp`, JSON.stringify(state, null, 2));
+      fs.renameSync(`${statePath()}.pets.tmp`, statePath());
+    },
+    changed: () => { rebuildTrayMenu(); petSettingsUi?.changed(); },
+    openSettings: (id) => petSettingsUi?.show(id) });
+  petSettingsUi = setupPetSettings({ BrowserWindow, ipcMain, dialog, app, appDir: __dirname, manager: petManager, catalog: petCatalog, networkUi });
 }
 
 function registerAssetProtocol() {
@@ -2009,7 +2058,25 @@ if (SQUIRREL) {
     session.defaultSession.setSpellCheckerEnabled(false); // 창보다 먼저
     const firstRun = !fs.existsSync(statePath()); // 이 앱 저장소를 처음 쓴다 → 마법사를 바로 연다
     loadState();
+    petCatalog = createPetCatalog({ directory: path.join(app.getPath('userData'), 'pet-characters'), agentHome: AGENT_HOME });
     registerAssetProtocol();
+    registerPetProtocol();
+    networkUi = setupNetworkWindow({ app, BrowserWindow, ipcMain, safeStorage, appDir: __dirname, config: networkConfig, file: networkFile });
+    if (networkConfig.mode !== 'normal') {
+      // Block Chromium networking in every session. Only local resources are loadable.
+      restrictSession(session.defaultSession);
+      app.on('session-created', restrictSession);
+      const restricted = restrictFetch(net.fetch.bind(net));
+      globalThis.fetch = restricted.fetch;
+      net.fetch = restricted.netFetch;
+      Menu.setApplicationMenu(null);
+      startPets(state.pets ?? ['shisa', 'hachi', 'rakko', 'momonga', 'usagi']);
+      createTray();
+      app.on('activate', () => petSettingsUi.show());
+      app.on('second-instance', () => petSettingsUi.show());
+      petSettingsUi.show();
+      return;
+    }
     registerAttachProtocol();
     setupIPC();
     createAppMenu();
@@ -2018,6 +2085,7 @@ if (SQUIRREL) {
     createWindow();
     // 윈도우 로그오프·종료는 before-quit 을 안 거친다(창의 session-end 만 온다) → 집중 기록·데몬 끄기를 여기서 짧게
     if (process.platform === 'win32') win?.on('session-end', onSessionEnd);
+    startPets(state.pets);
     createTray();
     startDaemonHost().catch((e) => console.error('[daemon]', e?.message ?? e));
     connectLoop();
@@ -2046,6 +2114,7 @@ if (SQUIRREL) {
       post('/focus/stop', {}, 1500).finally(() => app.quit());
       return;
     }
+    petManager?.dispose();
     quitting = true;
     currentAbort?.abort();
     globalShortcut.unregisterAll();
@@ -2056,7 +2125,7 @@ if (SQUIRREL) {
       daemonHost.stop().finally(() => app.quit());
     }
   });
-  app.on('will-quit', () => globalShortcut.unregisterAll());
+  app.on('will-quit', () => { petManager?.dispose(); globalShortcut.unregisterAll(); });
   // 창 닫혀도 계속 — 종료는 ⌘Q·Dock·트레이 메뉴에서만
   app.on('window-all-closed', () => {});
 }

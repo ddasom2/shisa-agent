@@ -1,0 +1,9 @@
+:root { color-scheme: light dark; font: 15px system-ui, sans-serif; }
+body { max-width: 680px; padding: 24px; margin: auto; }
+h1 { font-size: 24px; } h2 { font-size: 20px; }
+label { display: block; margin: 14px 0; }
+input:not([type=checkbox]), select, textarea { box-sizing: border-box; display: block; width: 100%; padding: 10px; margin-top: 6px; font: inherit; }
+textarea { min-height: 80px; } p { line-height: 1.6; opacity: .85; }
+button { padding: 9px 16px; margin: 5px 6px 5px 0; cursor: pointer; }
+#messages p { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; border: 1px solid #8886; border-radius: 8px; }
+#status { font-weight: 600; } [hidden] { display: none !important; }

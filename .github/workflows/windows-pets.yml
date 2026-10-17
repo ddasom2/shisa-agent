@@ -1,0 +1,46 @@
+name: Windows Desktop Pets
+on:
+  pull_request:
+    paths: ['desktop/**', 'assets/**', 'windows/**', 'docs/**', '.github/workflows/windows-pets.yml']
+  push:
+    branches: ['main']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-portable:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install build tools
+        run: npm ci --prefix desktop
+      - name: Regression and pet tests
+        run: npm test --prefix desktop
+      - name: Build portable ZIP (offline by default, assistant preserved)
+        run: node windows/dist-win.mjs --arch=x64 --no-installer --pet-default
+      - name: Packaged Electron smoke test (not manual GUI certification)
+        run: node desktop/scripts/pet-smoke.mjs desktop/dist/win/app/Shisa-win32-x64/Shisa.exe
+      - name: Build and test summary
+        if: always()
+        shell: pwsh
+        run: |
+          "## Windows pet validation" >> $env:GITHUB_STEP_SUMMARY
+          "Build, automated tests and Electron rendering/IPC smoke test are separate workflow steps." >> $env:GITHUB_STEP_SUMMARY
+          "Manual Windows 11 GUI, Explorer, multi-monitor DPI and mouse behavior are NOT certified by this workflow." >> $env:GITHUB_STEP_SUMMARY
+      - name: Upload portable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shisa-Desktop-Pets-Windows-x64
+          path: |
+            desktop/dist/win/Shisa-*-win-x64.zip
+            desktop/dist/win/SHA256SUMS-*-win-x64.txt
+          if-no-files-found: error
+          retention-days: 14

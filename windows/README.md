@@ -119,3 +119,11 @@ npm run dist:win -- --arch=x64 --no-installer   # Setup.exe 없이 앱 폴더와
 - 확인 전: Claude Code·Codex 작업 기록 읽기, 코드 고치기·워크트리, 캘린더·Slack 연결 뒤 데몬 다시 켜기, 캐릭터 창의 투명 배경·항상 위·여러 모니터 위치, 단축키(`⌘` 대신 `Ctrl`), 로그인할 때 자동 실행.
 - 터미널 설치(`ops/install.sh`, launchd)는 맥 전용입니다. 윈도우는 Setup.exe만 지원합니다.
 - ARM 전용 빌드(`--arch=arm64`)는 만들 수는 있지만 릴리스에는 올리지 않습니다.
+
+## 오프라인 데스크톱 펫
+
+알림 영역 아이콘 우클릭 → **데스크톱 펫** → **친구들 함께 소환**으로 다섯 캐릭터를 동시에 부릅니다. AI·인터넷 연결 없이 독립적으로 움직입니다. [사용법·구조·검증 안내](../docs/desktop-pets.md)를 참고하세요.
+
+### Desktop Pet 전용 Portable ZIP
+
+GitHub Actions의 **Windows Desktop Pets** 실행 → Artifacts → **Shisa-Desktop-Pets-Windows-x64**에서 빌드 결과를 받습니다. 안쪽 ZIP 전체를 풀고 `Desktop Pets.cmd`로 실행하면 AI·로그인·설치 없이 오프라인 펫 모드로 시작합니다. [상세 기능·로컬 캐릭터 추가·검증 범위](../docs/desktop-pets.md)를 참고하세요. 직접 만들려면 기존 빌드 명령에 `--no-installer --pet-default`를 붙입니다.

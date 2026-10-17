@@ -74,13 +74,31 @@ try {
   }
   assert.equal((await evaluate('window.petSettings.command("spawn", [{character:"hachi",count:2}])')).ok, true);
   state = await evaluate('window.petSettings.get()'); assert.equal(state.instances.length, 7);
+  // Wait for newly spawned windows too; do not quit while their local files are loading.
+  let seven;
+  for (let i = 0; i < 40; i++) {
+    seven = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(1500) })).json();
+    if (seven.filter((t) => t.url.includes('/pet.html')).length === 7) break;
+    await sleep(250);
+  }
+  assert.equal(seven.filter((t) => t.url.includes('/pet.html')).length, 7);
+  for (const target of seven.filter((t) => t.url.includes('/pet.html'))) {
+    const check = await connect(target);
+    let loaded = false;
+    for (let i = 0; i < 20; i++) {
+      loaded = await check('document.getElementById("pet").naturalWidth > 0 || document.getElementById("video").readyState >= 2');
+      if (loaded) break;
+      await sleep(250);
+    }
+    assert.equal(loaded, true, `spawned asset not loaded: ${target.url}`);
+  }
   const id = state.instances.at(-1).id;
   assert.equal((await evaluate(`window.petSettings.command("update", {id:${JSON.stringify(id)},patch:{size:160,speed:1.5,frequency:2}})`)).ok, true);
   state = await evaluate('window.petSettings.get()'); assert.equal(state.instances.at(-1).size, 160);
   const saved = JSON.parse(fs.readFileSync(path.join(root, 'data', 'state.json'), 'utf8'));
   assert.equal(saved.pets.instances.length, 7); assert.equal(saved.pets.paused, true);
   assert.deepEqual(errors, []);
-  console.log('PASS: actual Electron windows, five local assets, seven instances, isolated IPC, renderer network denial, settings and disk persistence.');
+  console.log('PASS: actual Electron windows, seven loaded local assets and instances, isolated IPC, renderer network denial, settings and disk persistence.');
   await evaluate('window.petSettings.command("quit")').catch(() => {});
 } finally {
   for (const ws of sockets) ws.close();

@@ -50,3 +50,37 @@ test('real local model transport sends only configured request, handles no-key, 
     assert.equal(requests.length, 3, 'no redirect or external fallback request');
   } finally { await new Promise((resolve) => server.close(resolve)); }
 });
+
+test('mode settings encrypt secrets, hide them from renderer and reject foreign frames', async () => {
+  const fs = await import('node:fs'), os = await import('node:os'), path = await import('node:path');
+  const { EventEmitter } = await import('node:events');
+  const { setupNetworkWindow } = await import('../src/network-window.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pet-mode-'));
+  const handlers = new Map(); let win, relaunches = 0;
+  class Window extends EventEmitter {
+    constructor() { super(); win = this; this.webContents = new EventEmitter(); this.webContents.mainFrame = {}; this.webContents.setWindowOpenHandler = () => {}; }
+    loadFile() {} isDestroyed() { return false; }
+  }
+  const file = path.join(root, 'data', 'network-mode.json');
+  try {
+    const ui = setupNetworkWindow({ app: { relaunch() { relaunches++; }, quit() {} }, BrowserWindow: Window,
+      ipcMain: { handle: (key, fn) => handlers.set(key, fn) }, appDir: root, file, config: { mode: 'offline', endpoint: '', model: '' },
+      safeStorage: { isEncryptionAvailable: () => true, encryptString: () => Buffer.from('encrypted-by-os'), decryptString: () => 'secret-key' } });
+    ui.show();
+    const e = { sender: win.webContents, senderFrame: win.webContents.mainFrame };
+    const save = handlers.get('network-mode-save');
+    const value = { mode: 'intranet', endpoint: 'http://127.0.0.1:11434/v1', model: 'local', apiKey: 'secret-key' };
+    assert.equal(save({ sender: {}, senderFrame: {} }, value).ok, false);
+    assert.equal(save({ sender: win.webContents, senderFrame: {} }, value).ok, false);
+    assert.equal(save(e, value).ok, true);
+    assert.equal(relaunches, 1);
+    assert.equal(fs.readFileSync(`${file}.key`, 'utf8'), 'encrypted-by-os');
+    assert.equal(fs.readFileSync(file, 'utf8').includes('secret-key'), false);
+    assert.equal(handlers.get('network-mode-get')(e).hasKey, true);
+    assert.equal(JSON.stringify(handlers.get('network-mode-get')(e)).includes('secret-key'), false);
+    assert.equal(readNetworkConfig(file).mode, 'intranet');
+    assert.equal((await handlers.get('network-mode-chat')(e, [{ role: 'user', content: 'hi' }])).ok, false, 'current offline policy stays effective until restart');
+    assert.equal(save(e, { mode: 'offline', apiKey: '', clearKey: true }).ok, true);
+    assert.equal(fs.existsSync(`${file}.key`), false);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});

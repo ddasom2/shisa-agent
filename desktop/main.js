@@ -45,6 +45,7 @@ import { createDaemonHost } from './src/daemon-host.js';
 import { RELEASES_API, checkDue, newestRelease, shouldNotify, updateBubble } from './src/update-check.js';
 import { denied } from './src/denied.js';
 import { withCalendarAdded, withCalendarRemoved, calendarRows, calendarUrlById, calendarUrls, hubDoneFor, calendarReloadNote, okCalendarId, CALENDAR_DUP } from './src/calendars.js';
+import { createPetManager } from './src/pet-windows.js';
 import { squirrelPlan, loginItemTarget, appUserModelId } from './src/squirrel.js';
 
 // 윈도우 Squirrel 설치기가 --squirrel-* 로 띄운 실행이면 바로 가기만 고치고 끝낸다(맨 아래 시작 부분에서 갈린다)
@@ -894,6 +895,7 @@ async function triggerBriefing() {
 }
 
 // ---- 트레이/메뉴 ----
+let petManager = null;
 function menuTemplate() {
   return [
     { label: '패널 열기', click: () => showPanel(null) },
@@ -901,6 +903,7 @@ function menuTemplate() {
     { label: '지금 브리핑', click: triggerBriefing },
     { label: '설정…', click: () => settingsUi?.show() },
     { label: '사용법 다시 보기', click: startTour },
+    ...(petManager ? [petManager.menu()] : []),
     { type: 'separator' },
     {
       label: state.bubblesHidden ? '말풍선 보이기' : '말풍선 숨기기',
@@ -1238,6 +1241,7 @@ function setupIPC() {
       ...(coder() ? [{ label: '작업 세션 열기', click: openSessionMenu }] : []),
       { label: '지금 브리핑', click: triggerBriefing },
       { label: '사용법 다시 보기', click: startTour },
+    ...(petManager ? [petManager.menu()] : []),
       { type: 'separator' },
       { label: `${who()} 끄기`, click: () => app.quit() },
     ]).popup({ window: win });
@@ -2018,6 +2022,8 @@ if (SQUIRREL) {
     createWindow();
     // 윈도우 로그오프·종료는 before-quit 을 안 거친다(창의 session-end 만 온다) → 집중 기록·데몬 끄기를 여기서 짧게
     if (process.platform === 'win32') win?.on('session-end', onSessionEnd);
+    petManager = createPetManager({ BrowserWindow, Menu, screen, appDir: __dirname,
+      saved: state.pets, persist: (pets) => { state.pets = pets; saveState(); }, changed: rebuildTrayMenu });
     createTray();
     startDaemonHost().catch((e) => console.error('[daemon]', e?.message ?? e));
     connectLoop();
@@ -2056,7 +2062,7 @@ if (SQUIRREL) {
       daemonHost.stop().finally(() => app.quit());
     }
   });
-  app.on('will-quit', () => globalShortcut.unregisterAll());
+  app.on('will-quit', () => { petManager?.dispose(); globalShortcut.unregisterAll(); });
   // 창 닫혀도 계속 — 종료는 ⌘Q·Dock·트레이 메뉴에서만
   app.on('window-all-closed', () => {});
 }
